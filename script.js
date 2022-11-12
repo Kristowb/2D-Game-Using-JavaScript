@@ -132,6 +132,8 @@ window.addEventListener('load', function()
             this.x = this.game.width;
             this.speedX = Math.random() * -1.5 - 0.5;
             this.markedForDeletion = false;
+            this.lives = 5; // Darah Musuh 5x Hit Laser
+            this.score = this.lives;
         }
 
         update()
@@ -144,6 +146,8 @@ window.addEventListener('load', function()
         {
             context.fillStyle = 'red';
             context.fillRect(this.x, this.y, this.width, this.height);
+            context.font = '20px Helvetica'
+            context.fillText (this.lives, this.x, this.y);
         }
     }
     class Angler1 extends Enemy
@@ -157,15 +161,56 @@ window.addEventListener('load', function()
         }
     }
 
-    // Will Handle Individual Background Layers in Parallax
+    // Will Handle Individual Background Layers Logic in Parallax
     class Layer
     {
-
+        constructor(game, image, speedModifier)
+        {
+            this.game = game;
+            this.image = image;
+            this.speedModifier = speedModifier;
+            this.width = 1768;
+            this.height = 500;
+            this.x = 0;
+            this.y = 0;
+        }
+        update()
+        {
+            if (this.x <= -this.width) this.x =0;
+            this.x -= this.game.speed * this.speedModifier;
+        }
+        draw(context)
+        {
+            context.drawImage(this.image, this.x, this.y);
+            context.drawImage(this.image, this.x + this.width, this.y); // The Trick
+        }
     }
     // Will Pull All Layer Object Together
     class Background
     {
+        constructor(game)
+        {
+            this.game = game;
+            this.image1 = document.getElementById('layer1');
+            this.image2 = document.getElementById('layer2');
+            this.image3 = document.getElementById('layer3');
+            this.image4 = document.getElementById('layer4');
 
+            this.layer1 = new Layer(this.game, this.image1, 0.2);
+            this.layer2 = new Layer(this.game, this.image2, 0.4);
+            this.layer3 = new Layer(this.game, this.image3, 1);
+            this.layer4 = new Layer(this.game, this.image4, 1.3);
+
+            this.layers = [this.layer1, this.layer2, this.layer3];
+        }
+        update()
+        {
+            this.layers.forEach(layer => layer.update());
+        }
+        draw(context)
+        {
+            this.layers.forEach(layer => layer.draw(context));
+        }
     }
 
     // Will Draw Score, Timer and Others Information 
@@ -176,16 +221,53 @@ window.addEventListener('load', function()
             this.game = game;
             this.fontSize = 25;
             this.fontFamily = 'Helvetica';
-            this.color = 'yellow';
+            this.color = 'white';
         }
         draw(context)
         {
-            // ammo
+            context.save();
+
             context.fillStyle = this.color;
+            context.shadowOffsetX = 2;
+            context.shadowOffsetY = 2;
+            context.shadowColor = 'black';
+            context.font = this.fontSize + 'px ' + this.fontFamily;
+            // score
+            context.fillText('Score: ' + this.game.score, 20, 40);
+
+            // ammo
             for (let i = 0; i < this.game.ammo; i++)
             {
                 context.fillRect(20 + 5 * i, 50, 3, 20);
             }
+
+            // timer
+            const formattedTime = (this.game.gameTime * 0.001).toFixed(1); //.toFixed method formats a number using fiexd point notation. use define number of digits we want to appear after the decimal point.
+            context.fillText('Timer: ' + formattedTime, 20, 100);
+
+            // game over messages
+            if (this.game.gameOver)
+            {
+                context.textAlign = 'center';
+                let message1;
+                let message2;
+                if (this.game.score > this.game.winningScore)
+                {
+                    message1 = 'You Win!';
+                    message2 = 'Well done!';
+                }
+                else
+                {
+                    message1 = 'You Lose!';
+                    message2 = 'Try again next time!';
+                }
+                context.font = '50px ' + this.fontFamily;
+                context.fillText (message1, this.game.width * 0.5, this.game.height * 0.5 - 40);
+                context.font = '25px ' + this.fontFamily;
+                context.fillText (message2, this.game.width * 0.5, this.game.height * 0.5 + 40);
+
+            }
+            context.restore();
         }
     }
 
@@ -196,6 +278,7 @@ window.addEventListener('load', function()
         {
             this.width = width;
             this.height = height;
+            this.background = new Background(this);
             this.player = new Player(this);
             this.input = new InputHandler(this);
             this.ui = new UI(this);
@@ -208,10 +291,20 @@ window.addEventListener('load', function()
             this.ammoTimer = 0;
             this.ammoInterval = 500;
             this.gameOver = false;
+            this.score = 0;
+            this.winningScore = 10;
+            this.gameTime = 0;
+            this.timeLimit = 5000;
+            this.speed = 1;
         }
         update(deltaTime)
         {
+            if(!this.gameOver) this.gameTime += deltaTime;
+            if(this.gameTime > this.timeLimit) this.gameOver = true;
+            this.background.update();
+            this.background.layer4.update(); // Background will behind the player
             this.player.update();
+
             if (this.ammoTimer > this.ammoInterval)
             {
                 if(this.ammo < this.maxAmmo) this.ammo++;
@@ -221,9 +314,34 @@ window.addEventListener('load', function()
             {
                 this.ammoTimer += deltaTime;
             }
+            // Check Collision Laser
             this.enemies.forEach(enemy =>
             {
                 enemy.update();
+                
+                // If collision with player, enemy deleted
+                if(this.checkCollision(this.player, enemy))
+                {
+                    enemy.markedForDeletion = true;
+                }
+                
+                // If laser collission with enemy, enemy lives decrease 1
+                // If lives <= 0, enemy deleted
+                // If score > winning score = gameOver
+                this.player.projectiles.forEach(projectile => 
+                    {
+                        if(this.checkCollision(projectile, enemy))
+                        {
+                            enemy.lives--;
+                            projectile.markedForDeletion = true;
+                            if (enemy.lives <= 0)
+                            {
+                                enemy.markedForDeletion = true;
+                                if (!this.gameOver) this.score += enemy.score;
+                                if (this.score > this.winningScore) this.gameOver = true;
+                            }
+                        }
+                    })
             });
             this.enemies = this.enemies.filter(enemy => !enemy.markedForDeletion);
 
@@ -239,17 +357,26 @@ window.addEventListener('load', function()
         }
         draw(context)
         {
+            this.background.draw(context);
             this.player.draw(context);
             this.ui.draw(context);
             this.enemies.forEach(enemy =>
             {
                 enemy.draw(context);
             });
+            this.background.layer4.draw(context); // Background will behind the players
         }
         addEnemy()
         {
             this.enemies.push(new Angler1(this));
             console.log(this.enemies);
+        }
+        checkCollision(rect1,rect2)
+        {
+            return( rect1.x < rect2.x + rect2.width &&
+                    rect1.x + rect1.width > rect2.x &&
+                    rect1.y < rect2.y + rect2.height &&
+                    rect1.height + rect1.y > rect2.y )
         }
     }
     
