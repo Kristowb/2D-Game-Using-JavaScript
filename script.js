@@ -5,6 +5,7 @@ window.addEventListener('load', function()
     const ctx = canvas.getContext('2d');
     canvas.width = 1500;
     canvas.height = 500;
+    // Re-comment
 
     // Will Handle Arrow Keys //
     class InputHandler
